@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "739710238444",
+    "project_id": "flutterdb-b7240",
+    "storage_bucket": "flutterdb-b7240.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:739710238444:android:bc2d557cc2858441baafc9",
+        "android_client_info": {
+          "package_name": "com.example.mangasphere"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA67s_Gi7ZeYQ8Fh9MW7MPxwxC4WqS0eow"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
