@@ -1,10 +1,11 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../core/theme.dart';
 import '../../core/local_library.dart';
-import '../../core/auth_store.dart';
 import '../../core/user_store.dart';
+import '../../core/firestore_service.dart';
 
 import '../auth/login_page.dart';
 import '../home/home_page.dart';
@@ -35,19 +36,48 @@ class _ProfilePageState extends State<ProfilePage> {
 
   Future<void> _loadInitial() async {
     setState(() => _loadingLib = true);
-    // Load user fields from SharedPreferences
-    final name = await UserStore.getName();
-    final email = await UserStore.getEmail();
-    final avatar = await UserStore.getAvatarPath();
-    final lib = await LibraryStore.load();
-    if (!mounted) return;
-    setState(() {
-      _username = (name == null || name.isEmpty) ? _username : name;
-      _email = (email == null || email.isEmpty) ? _email : email;
+    
+    try {
+      // Load user data from Firebase Auth first
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser != null) {
+        _username = currentUser.displayName ?? 'User';
+        _email = currentUser.email ?? 'user@example.com';
+        
+        // Try to get additional data from Firestore
+        final userDoc = await FirestoreService.getUser(currentUser.uid);
+        if (userDoc.exists) {
+          final userData = userDoc.data() as Map<String, dynamic>?;
+          if (userData != null) {
+            _username = userData['username'] ?? _username;
+            _email = userData['email'] ?? _email;
+          }
+        }
+      } else {
+        // Fallback to local storage if no Firebase user
+        final name = await UserStore.getName();
+        final email = await UserStore.getEmail();
+        _username = (name == null || name.isEmpty) ? _username : name;
+        _email = (email == null || email.isEmpty) ? _email : email;
+      }
+      
+      // Load avatar path from local storage
+      final avatar = await UserStore.getAvatarPath();
       _avatarPath = (avatar == null || avatar.isEmpty) ? null : avatar;
-      _library = lib;
-      _loadingLib = false;
-    });
+      
+      // Load library
+      final lib = await LibraryStore.load();
+      
+      if (!mounted) return;
+      setState(() {
+        _library = lib;
+        _loadingLib = false;
+      });
+    } catch (e) {
+      print('Error loading profile: $e');
+      if (!mounted) return;
+      setState(() => _loadingLib = false);
+    }
   }
 
   @override
@@ -259,86 +289,171 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Future<void> _editProfile() async {
-    final nameCtl = TextEditingController(text: _username);
-    final emailCtl = TextEditingController(text: _email);
-    final pwCtl = TextEditingController();
+  final nameCtl = TextEditingController(text: _username);
+  final emailCtl = TextEditingController(text: _email);
+  final pwCtl = TextEditingController();
+  final currentPwCtl = TextEditingController(); // Add current password field
 
-    final result = await showDialog<_EditProfileResult>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Edit profile'),
-        content: SingleChildScrollView(
-          child: Column(
-            children: [
-              TextField(
-                controller: nameCtl,
-                decoration: const InputDecoration(
-                  labelText: 'Username',
-                  prefixIcon: Icon(Icons.badge_outlined, color: AppTheme.iconColor),
-                ),
+  final result = await showDialog<_EditProfileResult>(
+    context: context,
+    builder: (_) => AlertDialog(
+      title: const Text('Edit profile'),
+      content: SingleChildScrollView(
+        child: Column(
+          children: [
+            TextField(
+              controller: nameCtl,
+              decoration: const InputDecoration(
+                labelText: 'Username',
+                prefixIcon: Icon(Icons.badge_outlined, color: AppTheme.iconColor),
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: emailCtl,
-                keyboardType: TextInputType.emailAddress,
-                decoration: const InputDecoration(
-                  labelText: 'Email',
-                  prefixIcon: Icon(Icons.email_outlined, color: AppTheme.iconColor),
-                ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: emailCtl,
+              keyboardType: TextInputType.emailAddress,
+              decoration: const InputDecoration(
+                labelText: 'Email',
+                prefixIcon: Icon(Icons.email_outlined, color: AppTheme.iconColor),
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: pwCtl,
-                obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: 'New password',
-                  prefixIcon: Icon(Icons.lock_outline, color: AppTheme.iconColor),
-                ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: currentPwCtl,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'Current password (required for changes)',
+                prefixIcon: Icon(Icons.lock, color: AppTheme.iconColor),
               ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: pwCtl,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'New password (optional)',
+                prefixIcon: Icon(Icons.lock_outline, color: AppTheme.iconColor),
+              ),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(
-              context,
-              _EditProfileResult(
-                username: nameCtl.text.trim(),
-                email: emailCtl.text.trim(),
-                newPassword: pwCtl.text,
-              ),
-            ),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF111111),
-              side: const BorderSide(color: AppTheme.widgetBorder, width: 1),
-            ),
-            child: const Text('Save'),
-          ),
-        ],
       ),
-    );
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        ElevatedButton(
+          onPressed: () => Navigator.pop(
+            context,
+            _EditProfileResult(
+              username: nameCtl.text.trim(),
+              email: emailCtl.text.trim(),
+              newPassword: pwCtl.text,
+              currentPassword: currentPwCtl.text,
+            ),
+          ),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF111111),
+            side: const BorderSide(color: AppTheme.widgetBorder, width: 1),
+          ),
+          child: const Text('Save'),
+        ),
+      ],
+    ),
+  );
 
-    if (result == null) return;
+  if (result == null) return;
 
-    // Persist updates locally; wire to backend later
-    if (result.username.isNotEmpty) {
-      _username = result.username;
+  try {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    
+    if (currentUser != null) {
+      // Update display name
+      if (result.username.isNotEmpty && result.username != _username) {
+        await currentUser.updateDisplayName(result.username);
+      }
+      
+      // Update email if changed (requires re-authentication)
+      if (result.email.isNotEmpty && result.email != _email && result.currentPassword.isNotEmpty) {
+        // Re-authenticate user first
+        final credential = EmailAuthProvider.credential(
+          email: _email, // current email
+          password: result.currentPassword,
+        );
+        await currentUser.reauthenticateWithCredential(credential);
+        
+        // Send verification email to new address
+        await currentUser.verifyBeforeUpdateEmail(result.email);
+        
+        // Show message about email verification
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Verification email sent to new address. Please verify to complete email update.'),
+            duration: Duration(seconds: 5),
+          ),
+        );
+      }
+      
+      // Update password if provided
+      if (result.newPassword.isNotEmpty && result.currentPassword.isNotEmpty) {
+        final credential = EmailAuthProvider.credential(
+          email: currentUser.email!,
+          password: result.currentPassword,
+        );
+        await currentUser.reauthenticateWithCredential(credential);
+        await currentUser.updatePassword(result.newPassword);
+      }
+      
+      // Update Firestore profile (use current email until email is verified)
+      await FirestoreService.updateUser(
+        userId: currentUser.uid,
+        username: result.username.isNotEmpty ? result.username : null,
+        // Don't update email in Firestore until verified
+      );
     }
-    if (result.email.isNotEmpty) {
-      _email = result.email;
-    }
-    await UserStore.saveProfile(name: _username, email: _email);
+    
+    // Update local data (except email until verified)
+    if (result.username.isNotEmpty) _username = result.username;
+    await UserStore.saveProfile(name: _username, email: _email); // Keep current email
 
     if (!mounted) return;
     setState(() {}); // refresh UI
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Profile updated')),
+      const SnackBar(content: Text('Profile updated successfully!')),
     );
-
-    // result.newPassword: available for backend call later
+  } on FirebaseAuthException catch (e) {
+    if (!mounted) return;
+    String errorMessage;
+    switch (e.code) {
+      case 'wrong-password':
+        errorMessage = 'Current password is incorrect.';
+        break;
+      case 'requires-recent-login':
+        errorMessage = 'Please log out and log back in to make these changes.';
+        break;
+      case 'email-already-in-use':
+        errorMessage = 'This email is already in use by another account.';
+        break;
+      case 'weak-password':
+        errorMessage = 'The new password provided is too weak.';
+        break;
+      case 'invalid-email':
+        errorMessage = 'The email address is not valid.';
+        break;
+      default:
+        errorMessage = 'Update failed: ${e.message}';
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(errorMessage)),
+    );
+  } catch (e) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Update failed: $e')),
+    );
   }
+}
+
 
   void _viewLibrary() {
     Navigator.of(context).push(
@@ -363,13 +478,26 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Future<void> _logout() async {
-    await AuthStore.setLoggedIn(false);
-    // Optionally also clear profile: await UserStore.clear();
-    if (!mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const LoginPage()),
-      (route) => false,
-    );
+    try {
+      // Sign out from Firebase Auth (this automatically handles session management)
+      await FirebaseAuth.instance.signOut();
+      
+      // Optionally clear local user data
+      await UserStore.clear();
+      
+      if (!mounted) return;
+      
+      // Navigate to login - Firebase auth state will automatically redirect
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const LoginPage()),
+        (route) => false,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Logout failed: $e')),
+      );
+    }
   }
 }
 
@@ -504,10 +632,13 @@ class _EditProfileResult {
   final String username;
   final String email;
   final String newPassword;
+  final String currentPassword; 
 
   _EditProfileResult({
     required this.username,
     required this.email,
     required this.newPassword,
+    required this.currentPassword, 
   });
 }
+

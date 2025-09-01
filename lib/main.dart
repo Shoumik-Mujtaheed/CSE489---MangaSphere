@@ -1,11 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
 import 'core/theme.dart';
-import './core/auth_store.dart';
 import 'pages/auth/login_page.dart';
 import 'pages/home/home_page.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Simple Firebase initialization (uses google-services.json automatically)
+  await Firebase.initializeApp();
+  
   runApp(const MangaComicsReaderApp());
 }
 
@@ -28,11 +34,11 @@ class _RootGate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<bool>(
-      future: AuthStore.isLoggedIn(),
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
-        // Simple splash/loading while reading prefs
-        if (snapshot.connectionState != ConnectionState.done) {
+        // Show loading while checking auth state
+        if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
             backgroundColor: AppTheme.appBackground,
             body: Center(
@@ -45,8 +51,14 @@ class _RootGate extends StatelessWidget {
           );
         }
 
-        final loggedIn = snapshot.data ?? false;
-        return loggedIn ? const HomePage() : const LoginPage();
+        // User is signed in if snapshot.data is not null
+        final user = snapshot.data;
+        if (user != null) {
+          return const HomePage();
+        }
+
+        // User is not signed in
+        return const LoginPage();
       },
     );
   }

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/theme.dart';
 import '../home/home_page.dart'; 
 import './signup_page.dart';
-import '../../../core/auth_store.dart'; 
+import '../../../core/firestore_service.dart';
+import '../../../core/user_store.dart';
 
 class LoginPage extends StatelessWidget {
   const LoginPage({super.key});
@@ -97,7 +99,7 @@ class LoginPage extends StatelessWidget {
   void _showLoginDialog(BuildContext context) {
     showDialog(
       context: context,
-      barrierDismissible: true, // user can cancel before submitting
+      barrierDismissible: true,
       builder: (_) => const _LoginDialog(),
     );
   }
@@ -129,27 +131,87 @@ class _LoginDialogState extends State<_LoginDialog> {
 
     setState(() => _submitting = true);
 
-    // TODO: Replace with real auth call
-    await Future.delayed(const Duration(milliseconds: 800));
+    try {
+      // Sign in with Firebase Auth
+      final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: _emailCtl.text.trim(),
+        password: _passwordCtl.text,
+      );
 
-    // Mark as logged in (persist session locally)
-    await AuthStore.setLoggedIn(true);
+      final user = credential.user;
+      if (user == null) {
+        throw Exception('Failed to sign in');
+      }
 
-    if (!mounted) return;
+      // Check if user profile exists in Firestore
+      final userDoc = await FirestoreService.getUser(user.uid);
+      
+      if (!userDoc.exists) {
+        // Create user profile if it doesn't exist
+        await FirestoreService.createUser(
+          userId: user.uid,
+          username: user.displayName ?? 'User',
+          email: user.email!,
+          isAdmin: false,
+        );
+      }
 
-    // Close dialog
-    Navigator.of(context).pop();
+      // Save user info locally
+      await UserStore.saveProfile(
+        name: user.displayName ?? 'User',
+        email: user.email!,
+      );
 
-    // Go to Home and replace Login screen so back won't return to it
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const HomePage()),
-    );
+      // REMOVE: await AuthStore.setLoggedIn(true); ❌
+      // Firebase Auth handles session state automatically!
+
+      if (!mounted) return;
+
+      // Close dialog
+      Navigator.of(context).pop();
+
+      // Navigate to Home - Firebase auth state will handle the rest
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const HomePage()),
+      );
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+      String errorMessage;
+      switch (e.code) {
+        case 'user-not-found':
+          errorMessage = 'No user found for that email.';
+          break;
+        case 'wrong-password':
+          errorMessage = 'Wrong password provided.';
+          break;
+        case 'invalid-email':
+          errorMessage = 'The email address is not valid.';
+          break;
+        case 'user-disabled':
+          errorMessage = 'This user account has been disabled.';
+          break;
+        case 'too-many-requests':
+          errorMessage = 'Too many requests. Try again later.';
+          break;
+        default:
+          errorMessage = 'Login failed: ${e.message}';
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(errorMessage)),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Login failed: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return WillPopScope(
-      // Prevent back button during submission
       onWillPop: () async => !_submitting,
       child: AlertDialog(
         title: const Text('Log in'),

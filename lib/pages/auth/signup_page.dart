@@ -1,6 +1,9 @@
 // lib/pages/auth/signup_page.dart
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../core/theme.dart';
+import '../../core/firestore_service.dart';
+import '../../core/user_store.dart';
 
 class SignupPage extends StatefulWidget {
   const SignupPage({super.key});
@@ -32,18 +35,70 @@ class _SignupPageState extends State<SignupPage> {
     setState(() => _submitting = true);
 
     try {
-      // TODO: Replace with real sign-up call (e.g., FirebaseAuth + Firestore profile)
-      await Future.delayed(const Duration(milliseconds: 900));
+      // Create user with Firebase Auth
+      final credential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        email: _emailCtl.text.trim(),
+        password: _passwordCtl.text,
+      );
+
+      final user = credential.user;
+      if (user == null) {
+        throw Exception('Failed to create user');
+      }
+
+      // Update display name
+      await user.updateDisplayName(_nameCtl.text.trim());
+
+      // Save user profile to Firestore using real UID
+      await FirestoreService.createUser(
+        userId: user.uid,
+        username: _nameCtl.text.trim(),
+        email: user.email!,
+        isAdmin: false,
+      );
+
+      // Save locally for quick access
+      await UserStore.saveProfile(
+        name: _nameCtl.text.trim(),
+        email: user.email!,
+      );
+
+      // Send email verification
+      await user.sendEmailVerification();
 
       if (!mounted) return;
 
-      // After successful signup:
+      // Success feedback
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Account created!')),
+        const SnackBar(
+          content: Text('Account created! Please check your email for verification.'),
+          duration: Duration(seconds: 4),
+        ),
       );
+
       Navigator.of(context).pop(); // Go back to LoginPage
-      // Or navigate to Home if preferred:
-      // Navigator.of(context).pushReplacementNamed(AppRoutes.home);
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+      String errorMessage;
+      switch (e.code) {
+        case 'weak-password':
+          errorMessage = 'The password provided is too weak.';
+          break;
+        case 'email-already-in-use':
+          errorMessage = 'An account already exists for that email.';
+          break;
+        case 'invalid-email':
+          errorMessage = 'The email address is not valid.';
+          break;
+        case 'operation-not-allowed':
+          errorMessage = 'Email/password accounts are not enabled.';
+          break;
+        default:
+          errorMessage = 'Signup failed: ${e.message}';
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(errorMessage)),
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -52,6 +107,23 @@ class _SignupPageState extends State<SignupPage> {
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
+  }
+
+  // Enhanced password validator
+  String? _validatePassword(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Password is required';
+    }
+    
+    if (value.length < 8) {
+      return 'Password must be at least 8 characters';
+    }
+    
+    if (!RegExp(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)').hasMatch(value)) {
+      return 'Password must contain uppercase, lowercase, and number';
+    }
+    
+    return null;
   }
 
   @override
@@ -130,14 +202,14 @@ class _SignupPageState extends State<SignupPage> {
                       ),
                       const SizedBox(height: 12),
 
-                      // Password
+                      // Password with enhanced validation
                       TextFormField(
                         controller: _passwordCtl,
                         obscureText: _obscure,
                         textInputAction: TextInputAction.done,
                         decoration: InputDecoration(
                           labelText: 'Password',
-                          hintText: 'Minimum 6 characters',
+                          hintText: 'Min 8 chars, uppercase, lowercase, number',
                           prefixIcon: const Icon(Icons.lock_outline, color: AppTheme.iconColor),
                           suffixIcon: IconButton(
                             icon: Icon(_obscure ? Icons.visibility : Icons.visibility_off,
@@ -145,11 +217,7 @@ class _SignupPageState extends State<SignupPage> {
                             onPressed: () => setState(() => _obscure = !_obscure),
                           ),
                         ),
-                        validator: (v) {
-                          if (v == null || v.isEmpty) return 'Password is required';
-                          if (v.length < 6) return 'Minimum 6 characters';
-                          return null;
-                        },
+                        validator: _validatePassword, // Use enhanced validator
                         onFieldSubmitted: (_) => _submit(),
                       ),
                       const SizedBox(height: 20),
