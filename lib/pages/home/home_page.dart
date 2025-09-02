@@ -1,11 +1,14 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 import '../../core/theme.dart';
 import '../../core/local_library.dart';
 import '../../core/import_cbz.dart';
 import '../reader/reader_page.dart';
-import '../profile/profile_page.dart'; 
+import '../profile/profile_page.dart';
+import '../../models/manga_model.dart';
+import '../../services/mangadx_service.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -14,26 +17,70 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
-  // 0 = Home, 1 = Profile (navigation triggers push to ProfilePage)
-  int _currentIndex = 0;
+class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
+  // Tab controller for switching between Online and Local
+  late TabController _tabController;
+  
+  // Local library data
   List<MangaLocal> _library = [];
-  bool _loading = false;
+  
+  // Online manga data
+  List<MangaModel> _onlineMangas = [];
+  
+  // Loading states
+  bool _loadingLocal = false;
+  bool _loadingOnline = false;
+  
+  // Error states
+  String? _onlineError;
+  
+  // Current tab: 0 = Online, 1 = Local
+  int _currentIndex = 0;
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     _loadLibrary();
+    _loadOnlineManga();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadLibrary() async {
-    setState(() => _loading = true);
+    setState(() => _loadingLocal = true);
     final items = await LibraryStore.load();
     if (!mounted) return;
     setState(() {
       _library = items;
-      _loading = false;
+      _loadingLocal = false;
     });
+  }
+
+  Future<void> _loadOnlineManga() async {
+    setState(() {
+      _loadingOnline = true;
+      _onlineError = null;
+    });
+
+    try {
+      final mangas = await MangaDxService.getPopularManga(limit: 24);
+      if (!mounted) return;
+      setState(() {
+        _onlineMangas = mangas;
+        _loadingOnline = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _onlineError = e.toString();
+        _loadingOnline = false;
+      });
+    }
   }
 
   @override
@@ -41,9 +88,22 @@ class _HomePageState extends State<HomePage> {
     return Scaffold(
       backgroundColor: AppTheme.appBackground,
       appBar: AppBar(
-        title: const Text('Home'),
+        title: const Text('MangaSphere'),
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(text: 'Online', icon: Icon(Icons.cloud)),
+            Tab(text: 'Local', icon: Icon(Icons.storage)),
+          ],
+        ),
       ),
-      body: _buildHomeBody(),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          _buildOnlineTab(),
+          _buildLocalTab(),
+        ],
+      ),
       bottomNavigationBar: NavigationBar(
         backgroundColor: const Color(0xFF111111),
         surfaceTintColor: Colors.transparent,
@@ -51,10 +111,8 @@ class _HomePageState extends State<HomePage> {
         selectedIndex: _currentIndex,
         onDestinationSelected: (i) async {
           if (i == 0) {
-            // Stay on Home
             setState(() => _currentIndex = 0);
           } else if (i == 1) {
-            // Navigate to Profile page, then return to Home when popped
             setState(() => _currentIndex = 1);
             await Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const ProfilePage()),
@@ -76,7 +134,7 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
-      floatingActionButton: _currentIndex == 0
+      floatingActionButton: _tabController.index == 1 
           ? FloatingActionButton.extended(
               onPressed: _onAddManga,
               backgroundColor: const Color(0xFF111111),
@@ -92,8 +150,101 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildHomeBody() {
-    if (_loading) {
+  Widget _buildOnlineTab() {
+    if (_loadingOnline) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text(
+              'Loading popular manga...',
+              style: TextStyle(color: Colors.white70),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_onlineError != null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, size: 64, color: Colors.red),
+            const SizedBox(height: 16),
+            Text(
+              'Failed to load manga',
+              style: const TextStyle(color: Colors.white, fontSize: 18),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _onlineError!,
+              style: const TextStyle(color: Colors.white70),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: _loadOnlineManga,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Retry'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF111111),
+                side: const BorderSide(color: AppTheme.widgetBorder, width: 1),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_onlineMangas.isEmpty) {
+      return const Center(
+        child: Text(
+          'No manga found',
+          style: TextStyle(color: Colors.white70),
+        ),
+      );
+    }
+
+    final size = MediaQuery.of(context).size;
+    final crossAxisCount = size.width >= 1100
+        ? 6
+        : size.width >= 900
+            ? 5
+            : size.width >= 700
+                ? 4
+                : size.width >= 520
+                    ? 3
+                    : 2;
+
+    return RefreshIndicator(
+      onRefresh: _loadOnlineManga,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+        child: GridView.builder(
+          itemCount: _onlineMangas.length,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: crossAxisCount,
+            mainAxisSpacing: 14,
+            crossAxisSpacing: 14,
+            childAspectRatio: 0.67,
+          ),
+          itemBuilder: (context, index) {
+            final manga = _onlineMangas[index];
+            return _OnlineMangaTile(
+              manga: manga,
+              onTap: () => _openOnlineManga(manga),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLocalTab() {
+    if (_loadingLocal) {
       return const Center(
         child: SizedBox(
           height: 28,
@@ -130,7 +281,7 @@ class _HomePageState extends State<HomePage> {
         ),
         itemBuilder: (context, index) {
           final item = _library[index];
-          return _MangaTile(
+          return _LocalMangaTile(
             title: item.title,
             coverPath: item.coverPath,
             onTap: () => _openManga(item),
@@ -141,23 +292,28 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  void _openOnlineManga(MangaModel manga) {
+    // TODO: Navigate to online manga details/reader
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Opening: ${manga.title}')),
+    );
+  }
+
+  // Keep all your existing local manga methods
   Future<void> _onAddManga() async {
-    if (_loading) return;
-    setState(() => _loading = true);
-
+    if (_loadingLocal) return;
+    setState(() => _loadingLocal = true);
     final res = await CbzImporter.pickAndImport();
-
     if (!mounted) return;
-
     if (res.error != null) {
-      setState(() => _loading = false);
+      setState(() => _loadingLocal = false);
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(res.error!)));
       return;
     }
 
     if (res.manga == null) {
-      setState(() => _loading = false);
+      setState(() => _loadingLocal = false);
       return;
     }
 
@@ -165,9 +321,8 @@ class _HomePageState extends State<HomePage> {
     await LibraryStore.save(updated);
     setState(() {
       _library = updated;
-      _loading = false;
+      _loadingLocal = false;
     });
-
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Imported: ${res.manga!.title}')),
     );
@@ -179,8 +334,9 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  // Keep all your existing methods: _deleteManga, _renameManga, _showTileMenu
   Future<void> _deleteManga(MangaLocal m) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showDialog(
           context: context,
           builder: (_) => AlertDialog(
             title: const Text('Delete manga?'),
@@ -204,7 +360,6 @@ class _HomePageState extends State<HomePage> {
           ),
         ) ??
         false;
-
     if (!confirmed) return;
 
     try {
@@ -306,46 +461,78 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
-class _EmptyState extends StatelessWidget {
-  const _EmptyState();
+// Online manga tile widget
+class _OnlineMangaTile extends StatelessWidget {
+  const _OnlineMangaTile({
+    required this.manga,
+    this.onTap,
+  });
+
+  final MangaModel manga;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(18),
-            decoration: ShapeDecoration(
-              color: const Color(0xFF111111),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-                side: const BorderSide(color: AppTheme.widgetBorder, width: 1),
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: onTap,
+      child: Container(
+        decoration: ShapeDecoration(
+          color: const Color(0xFF111111),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: const BorderSide(color: AppTheme.widgetBorder, width: 1),
+          ),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: CachedNetworkImage(
+                imageUrl: manga.coverUrl,
+                fit: BoxFit.cover,
+                placeholder: (context, url) => Container(
+                  color: const Color(0xFF222222),
+                  child: const Center(
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+                errorWidget: (context, url, error) => Container(
+                  color: const Color(0xFF222222),
+                  child: const Center(
+                    child: Icon(
+                      Icons.image_not_supported_outlined,
+                      color: Colors.white38,
+                      size: 40,
+                    ),
+                  ),
+                ),
               ),
             ),
-            child: const Icon(Icons.menu_book_rounded,
-                size: 42, color: AppTheme.iconColor),
-          ),
-          const SizedBox(height: 16),
-          const Text(
-            'No uploads yet',
-            style:
-                TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'Upload a CBZ/ZIP file to see it here.',
-            style: TextStyle(color: Colors.white70),
-          ),
-        ],
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 10, 10, 12),
+              child: Text(
+                manga.title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                  height: 1.2,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
-class _MangaTile extends StatelessWidget {
-  const _MangaTile({
+// Keep your existing local tile and empty state widgets
+class _LocalMangaTile extends StatelessWidget {
+  const _LocalMangaTile({
     required this.title,
     required this.coverPath,
     this.onTap,
@@ -405,6 +592,44 @@ class _MangaTile extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _EmptyState extends StatelessWidget {
+  const _EmptyState();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: ShapeDecoration(
+              color: const Color(0xFF111111),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: const BorderSide(color: AppTheme.widgetBorder, width: 1),
+              ),
+            ),
+            child: const Icon(Icons.menu_book_rounded,
+                size: 42, color: AppTheme.iconColor),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'No uploads yet',
+            style:
+                TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Upload a CBZ/ZIP file to see it here.',
+            style: TextStyle(color: Colors.white70),
+          ),
+        ],
       ),
     );
   }
