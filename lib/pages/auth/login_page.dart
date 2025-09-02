@@ -3,7 +3,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/theme.dart';
 import '../home/home_page.dart'; 
 import './signup_page.dart';
-import '../../../core/firestore_service.dart';
 import '../../../core/user_store.dart';
 import '../../../core/user_session.dart';
 import '../admin/admin_home_page.dart'; // You'll create this next

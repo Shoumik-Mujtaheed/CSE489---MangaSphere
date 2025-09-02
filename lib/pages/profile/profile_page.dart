@@ -10,7 +10,7 @@ import '../../core/user_session.dart';
 
 import '../auth/login_page.dart';
 import '../home/home_page.dart';
-import './admin/admin_home_page.dart';
+import '../admin/admin_home_page.dart';
 
 
 class ProfilePage extends StatefulWidget {

@@ -148,12 +148,15 @@ class _AdminHomePageState extends State<AdminHomePage> {
           const SizedBox(height: 16),
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance.collection('users').snapshots(),
+              stream: FirebaseFirestore.instance
+                  .collection('users')
+                  .where('isAdmin', isEqualTo: false) // Only normal users
+                  .snapshots(),
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
                   return Center(
-                    child: Text('Error: ${snapshot.error}', 
-                                style: const TextStyle(color: Colors.white70)),
+                    child: Text('Error: ${snapshot.error}',
+                        style: const TextStyle(color: Colors.white70)),
                   );
                 }
 
@@ -165,8 +168,8 @@ class _AdminHomePageState extends State<AdminHomePage> {
 
                 if (users.isEmpty) {
                   return const Center(
-                    child: Text('No users found', 
-                                style: TextStyle(color: Colors.white70)),
+                    child: Text('No users found',
+                        style: TextStyle(color: Colors.white70)),
                   );
                 }
 
@@ -175,21 +178,14 @@ class _AdminHomePageState extends State<AdminHomePage> {
                   itemBuilder: (context, index) {
                     final userData = users[index].data() as Map<String, dynamic>;
                     final userId = users[index].id;
-                    
+
                     return Card(
                       color: const Color(0xFF111111),
                       margin: const EdgeInsets.only(bottom: 8),
                       child: ListTile(
                         leading: CircleAvatar(
-                          backgroundColor: userData['isAdmin'] == true 
-                              ? Colors.orange 
-                              : Colors.blue,
-                          child: Icon(
-                            userData['isAdmin'] == true 
-                                ? Icons.admin_panel_settings 
-                                : Icons.person,
-                            color: Colors.white,
-                          ),
+                          backgroundColor: Colors.blue,
+                          child: const Icon(Icons.person, color: Colors.white),
                         ),
                         title: Text(
                           userData['username'] ?? 'Unknown User',
@@ -199,15 +195,62 @@ class _AdminHomePageState extends State<AdminHomePage> {
                           userData['email'] ?? 'No email',
                           style: const TextStyle(color: Colors.white70),
                         ),
-                        trailing: userData['isAdmin'] == true
-                            ? const Chip(
-                                label: Text('Admin', style: TextStyle(color: Colors.white)),
-                                backgroundColor: Colors.orange,
-                              )
-                            : const Chip(
-                                label: Text('User', style: TextStyle(color: Colors.white)),
-                                backgroundColor: Colors.blue,
+                        trailing: IconButton(
+                          tooltip: 'Delete user',
+                          icon: const Icon(Icons.delete_outline, color: Color.fromARGB(255, 129, 2, 2)),
+                          onPressed: () async {
+                            // Show confirmation dialog
+                            final confirm = await showDialog<bool>(
+                              context: context,
+                              builder: (_) => AlertDialog(
+                                title: const Text('Delete user?'),
+                                content: Text('Are you sure you want to delete "${userData['username'] ?? 'this user'}"?'),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(context, false),
+                                    child: const Text('Cancel'),
+                                  ),
+                                  ElevatedButton(
+                                    onPressed: () => Navigator.pop(context, true),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.redAccent,
+                                    ),
+                                    child: const Text('Delete'),
+                                  ),
+                                ],
                               ),
+                            );
+
+                            // If not confirmed, do nothing
+                            if (confirm != true) return;
+
+                            try {
+                              // Delete user document from Firestore
+                              await FirebaseFirestore.instance
+                                  .collection('users')
+                                  .doc(userId)
+                                  .delete();
+                              
+                              // Show success message
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Successfully deleted user "${userData['username'] ?? 'unknown'}"'),
+                                  backgroundColor: Colors.green,
+                                ),
+                              );
+                            } catch (e) {
+                              // Show error message
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Failed to delete user: $e'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          },
+                        ),
                       ),
                     );
                   },
@@ -243,7 +286,7 @@ class _AdminHomePageState extends State<AdminHomePage> {
                   return const Center(child: CircularProgressIndicator());
                 }
 
-                final data = snapshot.data as Map<String, dynamic>? ?? {};
+                final data = snapshot.data ?? {};
 
                 return Column(
                   children: [
