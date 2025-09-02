@@ -135,7 +135,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           ),
         ],
       ),
-      floatingActionButton: _tabController.index == 1 
+      
+      // ✅ RESTORED: Floating Action Button for Local Tab Import
+      floatingActionButton: _tabController.index == 1
           ? FloatingActionButton.extended(
               onPressed: _onAddManga,
               backgroundColor: const Color(0xFF111111),
@@ -145,7 +147,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 side: const BorderSide(color: AppTheme.widgetBorder, width: 1),
               ),
               icon: const Icon(Icons.upload_rounded, color: AppTheme.iconColor),
-              label: const Text('Upload'),
+              label: const Text('Import'),
             )
           : null,
     );
@@ -175,9 +177,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           children: [
             const Icon(Icons.error_outline, size: 64, color: Colors.red),
             const SizedBox(height: 16),
-            Text(
+            const Text(
               'Failed to load manga',
-              style: const TextStyle(color: Colors.white, fontSize: 18),
+              style: TextStyle(color: Colors.white, fontSize: 18),
             ),
             const SizedBox(height: 8),
             Text(
@@ -294,20 +296,24 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   void _openOnlineManga(MangaModel manga) {
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (_) => MangaDetailPage(manga: manga),
-    ),
-  );
-}
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => MangaDetailPage(manga: manga),
+      ),
+    );
+  }
 
-  // Keep all your existing local manga methods
+  // ✅ RESTORED: Import manga function
   Future<void> _onAddManga() async {
     if (_loadingLocal) return;
+    
     setState(() => _loadingLocal = true);
+    
     final res = await CbzImporter.pickAndImport();
+    
     if (!mounted) return;
+    
     if (res.error != null) {
       setState(() => _loadingLocal = false);
       ScaffoldMessenger.of(context)
@@ -322,10 +328,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
     final updated = [..._library, res.manga!];
     await LibraryStore.save(updated);
+    
     setState(() {
       _library = updated;
       _loadingLocal = false;
     });
+    
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Imported: ${res.manga!.title}')),
     );
@@ -533,7 +541,7 @@ class _OnlineMangaTile extends StatelessWidget {
   }
 }
 
-// Keep your existing local tile and empty state widgets
+// Local manga tile widget
 class _LocalMangaTile extends StatelessWidget {
   const _LocalMangaTile({
     required this.title,

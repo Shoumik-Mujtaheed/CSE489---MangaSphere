@@ -7,11 +7,10 @@ import '../../core/local_library.dart';
 import '../../core/user_store.dart';
 import '../../core/firestore_service.dart';
 import '../../core/user_session.dart';
-
 import '../auth/login_page.dart';
 import '../home/home_page.dart';
 import '../admin/admin_home_page.dart';
-
+import '../preferences/preferences_form_page.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -23,12 +22,10 @@ class ProfilePage extends StatefulWidget {
 class _ProfilePageState extends State<ProfilePage> {
   // Bottom nav: 0 = Home, 1 = Profile (we're on Profile)
   int _currentIndex = 1;
-
   String _username = 'New User';
   String _email = 'user@example.com';
   String? _avatarPath;
   bool _isAdmin = false;
-
   bool _loadingLib = false;
   List<MangaLocal> _library = [];
 
@@ -40,13 +37,11 @@ class _ProfilePageState extends State<ProfilePage> {
 
   Future<void> _loadInitial() async {
     setState(() => _loadingLib = true);
-    
     try {
       // Load user data from Firebase Auth and Firestore
       final currentUser = FirebaseAuth.instance.currentUser;
       if (currentUser != null) {
         final session = await UserSession.getCurrentSession();
-        
         if (session != null) {
           _username = session.username;
           _email = session.email;
@@ -63,14 +58,13 @@ class _ProfilePageState extends State<ProfilePage> {
         _username = (name == null || name.isEmpty) ? _username : name;
         _email = (email == null || email.isEmpty) ? _email : email;
       }
-      
+
       // Load avatar path from local storage
       final avatar = await UserStore.getAvatarPath();
       _avatarPath = (avatar == null || avatar.isEmpty) ? null : avatar;
       
       // Load library
       final lib = await LibraryStore.load();
-      
       if (!mounted) return;
       setState(() {
         _library = lib;
@@ -182,6 +176,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 ],
               ),
             ),
+
             const SizedBox(height: 16),
 
             // Edit profile
@@ -190,6 +185,7 @@ class _ProfilePageState extends State<ProfilePage> {
               label: 'Edit profile',
               onTap: _editProfile,
             ),
+
             const SizedBox(height: 12),
 
             // View library
@@ -197,6 +193,15 @@ class _ProfilePageState extends State<ProfilePage> {
               icon: Icons.menu_book_rounded,
               label: 'View library',
               onTap: _viewLibrary,
+            ),
+
+            const SizedBox(height: 12),
+
+            // Set preferences button
+            _ProfileActionButton(
+              icon: Icons.tune,
+              label: 'Set preferences',
+              onTap: _setPreferences,
             ),
 
             // Admin-only features
@@ -252,7 +257,6 @@ class _ProfilePageState extends State<ProfilePage> {
           ],
         ),
       ),
-
       // Bottom navigation identical style to Home
       bottomNavigationBar: NavigationBar(
         backgroundColor: const Color(0xFF111111),
@@ -321,8 +325,8 @@ class _ProfilePageState extends State<ProfilePage> {
         ],
       ),
     );
-
     if (path == null || path.isEmpty) return;
+
     final file = File(path);
     if (!file.existsSync()) {
       if (!mounted) return;
@@ -414,13 +418,12 @@ class _ProfilePageState extends State<ProfilePage> {
 
     try {
       final currentUser = FirebaseAuth.instance.currentUser;
-      
       if (currentUser != null) {
         // Update display name
         if (result.username.isNotEmpty && result.username != _username) {
           await currentUser.updateDisplayName(result.username);
         }
-        
+
         // Update email if changed (requires re-authentication)
         if (result.email.isNotEmpty && result.email != _email && result.currentPassword.isNotEmpty) {
           // Re-authenticate user first
@@ -429,10 +432,8 @@ class _ProfilePageState extends State<ProfilePage> {
             password: result.currentPassword,
           );
           await currentUser.reauthenticateWithCredential(credential);
-          
           // Send verification email to new address
           await currentUser.verifyBeforeUpdateEmail(result.email);
-          
           // Show message about email verification
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
@@ -442,7 +443,7 @@ class _ProfilePageState extends State<ProfilePage> {
             ),
           );
         }
-        
+
         // Update password if provided
         if (result.newPassword.isNotEmpty && result.currentPassword.isNotEmpty) {
           final credential = EmailAuthProvider.credential(
@@ -452,25 +453,24 @@ class _ProfilePageState extends State<ProfilePage> {
           await currentUser.reauthenticateWithCredential(credential);
           await currentUser.updatePassword(result.newPassword);
         }
-        
+
         // Update Firestore profile (use current email until email is verified)
         await FirestoreService.updateUser(
           userId: currentUser.uid,
           username: result.username.isNotEmpty ? result.username : null,
           // Don't update email in Firestore until verified
         );
+
+        // Update local data (except email until verified)
+        if (result.username.isNotEmpty) _username = result.username;
+        await UserStore.saveProfile(name: _username, email: _email); // Keep current email
+
+        if (!mounted) return;
+        setState(() {}); // refresh UI
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Profile updated successfully!')),
+        );
       }
-      
-      // Update local data (except email until verified)
-      if (result.username.isNotEmpty) _username = result.username;
-      await UserStore.saveProfile(name: _username, email: _email); // Keep current email
-
-      if (!mounted) return;
-      setState(() {}); // refresh UI
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Profile updated successfully!')),
-      );
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
       String errorMessage;
@@ -526,16 +526,29 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
+  // ✅ ADD THIS METHOD - Set Preferences
+  void _setPreferences() async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser != null) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => PreferencesFormPage(userId: currentUser.uid),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please log in to set preferences')),
+      );
+    }
+  }
+
   Future<void> _logout() async {
     try {
       // Sign out from Firebase Auth (this automatically handles session management)
       await FirebaseAuth.instance.signOut();
-      
       // Optionally clear local user data
       await UserStore.clear();
-      
       if (!mounted) return;
-      
       // Navigate to login - Firebase auth state will automatically redirect
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => const LoginPage()),
