@@ -5,6 +5,8 @@ import '../home/home_page.dart';
 import './signup_page.dart';
 import '../../../core/firestore_service.dart';
 import '../../../core/user_store.dart';
+import '../../../core/user_session.dart';
+import '../admin/admin_home_page.dart'; // You'll create this next
 
 class LoginPage extends StatelessWidget {
   const LoginPage({super.key});
@@ -143,37 +145,34 @@ class _LoginDialogState extends State<_LoginDialog> {
         throw Exception('Failed to sign in');
       }
 
-      // Check if user profile exists in Firestore
-      final userDoc = await FirestoreService.getUser(user.uid);
+      // Load user session with role information
+      final session = await UserSession.getCurrentSession();
       
-      if (!userDoc.exists) {
-        // Create user profile if it doesn't exist
-        await FirestoreService.createUser(
-          userId: user.uid,
-          username: user.displayName ?? 'User',
-          email: user.email!,
-          isAdmin: false,
-        );
+      if (session == null) {
+        throw Exception('Failed to load user session');
       }
 
       // Save user info locally
       await UserStore.saveProfile(
-        name: user.displayName ?? 'User',
-        email: user.email!,
+        name: session.username,
+        email: session.email,
       );
-
-      // REMOVE: await AuthStore.setLoggedIn(true); ❌
-      // Firebase Auth handles session state automatically!
 
       if (!mounted) return;
 
       // Close dialog
       Navigator.of(context).pop();
 
-      // Navigate to Home - Firebase auth state will handle the rest
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const HomePage()),
-      );
+      // Navigate based on user role
+      if (session.isAdmin) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const AdminHomePage()),
+        );
+      } else {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const HomePage()),
+        );
+      }
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
       String errorMessage;
