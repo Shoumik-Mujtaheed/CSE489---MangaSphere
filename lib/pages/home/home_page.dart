@@ -55,6 +55,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    
+    // Add listener to update UI when tab changes
+    _tabController.addListener(() {
+      if (_tabController.indexIsChanging) {
+        setState(() {});
+      }
+    });
+    
     _loadLibrary();
     _loadPopularManga();
     _loadUserPreferencesAndFilter();
@@ -251,20 +259,27 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           ),
         ],
       ),
-      // ✅ FIXED: Import Button for Local Tab
+      // Import Button for Local Tab
       floatingActionButton: _tabController.index == 1
           ? FloatingActionButton(
-              onPressed: _onAddManga,
-              backgroundColor: Colors.redAccent,
-              child: const Icon(Icons.add, color: Colors.white),
+              onPressed: _loadingLocal ? null : _onAddManga,
+              backgroundColor: const Color.fromARGB(255, 165, 0, 0),
+              child: _loadingLocal 
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      ),
+                    )
+                  : const Icon(Icons.add, color: Colors.white),
               tooltip: 'Import Manga',
             )
           : null,
     );
   }
 
-  // Your existing methods remain the same...
-  
   Widget _buildOnlineTab() {
     final size = MediaQuery.of(context).size;
     final crossAxisCount = size.width >= 1100
@@ -577,31 +592,37 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     if (_loadingLocal) return;
     
     setState(() => _loadingLocal = true);
-    final res = await CbzImporter.pickAndImport();
     
-    if (!mounted) return;
-    if (res.error != null) {
-      setState(() => _loadingLocal = false);
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(res.error!)));
-      return;
-    }
+    try {
+      final res = await CbzImporter.pickAndImport();
+      
+      if (!mounted) return;
+      
+      if (res.error != null) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(res.error!)));
+        return;
+      }
 
-    if (res.manga == null) {
-      setState(() => _loadingLocal = false);
-      return;
-    }
+      if (res.manga == null) {
+        return;
+      }
 
-    final updated = [..._library, res.manga!];
-    await LibraryStore.save(updated);
-    setState(() {
-      _library = updated;
-      _loadingLocal = false;
-    });
-    
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Imported: ${res.manga!.title}')),
-    );
+      final updated = [..._library, res.manga!];
+      await LibraryStore.save(updated);
+      
+      setState(() {
+        _library = updated;
+      });
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Imported: ${res.manga!.title}')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _loadingLocal = false);
+      }
+    }
   }
 
   void _openManga(MangaLocal m) {
