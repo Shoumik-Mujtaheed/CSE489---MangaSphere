@@ -1,9 +1,11 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../models/preferences_model.dart';
 
 class FirestoreService {
   static final FirebaseFirestore _db = FirebaseFirestore.instance;
 
   // USER OPERATIONS
+
   static Future<void> createUser({
     required String userId,
     required String username,
@@ -45,7 +47,7 @@ class FirestoreService {
       Map<String, dynamic> updates = {
         'updatedAt': FieldValue.serverTimestamp(),
       };
-      
+
       if (username != null) updates['username'] = username;
       if (email != null) updates['email'] = email;
       if (avatarUrl != null) updates['avatarUrl'] = avatarUrl;
@@ -60,8 +62,9 @@ class FirestoreService {
   static Future<bool> isUserAdmin(String userId) async {
     try {
       DocumentSnapshot doc = await _db.collection('users').doc(userId).get();
-      return doc.exists && doc.data() != null && 
-             (doc.data() as Map<String, dynamic>)['isAdmin'] == true;
+      return doc.exists &&
+          doc.data() != null &&
+          (doc.data() as Map)['isAdmin'] == true;
     } catch (e) {
       print('Error checking admin status: $e');
       return false;
@@ -77,7 +80,77 @@ class FirestoreService {
     }
   }
 
+  // USER PREFERENCES OPERATIONS
+
+  /// Get user manga preferences from Firestore
+  static Future<PreferencesModel?> getUserPreferences(String userId) async {
+    try {
+      final doc = await _db
+          .collection('users')
+          .doc(userId)
+          .collection('preferences')
+          .doc('manga')
+          .get();
+
+      if (doc.exists && doc.data() != null) {
+        return PreferencesModel.fromFirestore(doc);
+      } else {
+        return null; // User has no preferences set
+      }
+    } catch (e) {
+      print('Error fetching user preferences: $e');
+      return null;
+    }
+  }
+
+  /// Save user manga preferences to Firestore
+  static Future<void> saveUserPreferences(String userId, PreferencesModel preferences) async {
+    try {
+      await _db
+          .collection('users')
+          .doc(userId)
+          .collection('preferences')
+          .doc('manga')
+          .set(preferences.toFirestore());
+    } catch (e) {
+      print('Error saving user preferences: $e');
+      rethrow;
+    }
+  }
+
+  /// Update specific user preferences
+  static Future<void> updateUserPreferences(String userId, Map<String, dynamic> updates) async {
+    try {
+      updates['updatedAt'] = FieldValue.serverTimestamp();
+      await _db
+          .collection('users')
+          .doc(userId)
+          .collection('preferences')
+          .doc('manga')
+          .update(updates);
+    } catch (e) {
+      print('Error updating user preferences: $e');
+      rethrow;
+    }
+  }
+
+  /// Delete user preferences
+  static Future<void> deleteUserPreferences(String userId) async {
+    try {
+      await _db
+          .collection('users')
+          .doc(userId)
+          .collection('preferences')
+          .doc('manga')
+          .delete();
+    } catch (e) {
+      print('Error deleting user preferences: $e');
+      rethrow;
+    }
+  }
+
   // MANGA OPERATIONS
+
   static Future<String> addManga({
     required String title,
     required String uploadedBy,
@@ -135,7 +208,7 @@ class FirestoreService {
       Map<String, dynamic> updates = {
         'updatedAt': FieldValue.serverTimestamp(),
       };
-      
+
       if (title != null) updates['title'] = title;
       if (coverUrl != null) updates['coverUrl'] = coverUrl;
       if (pageUrls != null) {
@@ -160,6 +233,7 @@ class FirestoreService {
   }
 
   // USER LIBRARY OPERATIONS
+
   static Future<void> addToLibrary({
     required String userId,
     required String mangaId,
@@ -196,6 +270,7 @@ class FirestoreService {
   }) async {
     try {
       bool isCompleted = currentPage >= totalPages - 1;
+
       await _db
           .collection('users')
           .doc(userId)
@@ -240,6 +315,7 @@ class FirestoreService {
   }
 
   // SEARCH AND QUERY OPERATIONS
+
   static Stream<QuerySnapshot> searchMangaByTitle(String searchTerm) {
     return _db
         .collection('manga')
@@ -248,7 +324,7 @@ class FirestoreService {
         .snapshots();
   }
 
-  static Future<List<DocumentSnapshot>> getRecentManga({int limit = 10}) async {
+  static Future<List<QueryDocumentSnapshot>> getRecentManga({int limit = 10}) async {
     try {
       QuerySnapshot snapshot = await _db
           .collection('manga')
@@ -263,7 +339,8 @@ class FirestoreService {
   }
 
   // ADMIN OPERATIONS
-  static Future<List<DocumentSnapshot>> getAllUsers() async {
+
+  static Future<List<QueryDocumentSnapshot>> getAllUsers() async {
     try {
       QuerySnapshot snapshot = await _db.collection('users').get();
       return snapshot.docs;
