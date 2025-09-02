@@ -9,6 +9,7 @@ import '../reader/reader_page.dart';
 import '../profile/profile_page.dart';
 import '../../models/manga_model.dart';
 import '../../services/mangadx_service.dart';
+import '../manga/manga_detail_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -293,11 +294,13 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   void _openOnlineManga(MangaModel manga) {
-    // TODO: Navigate to online manga details/reader
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Opening: ${manga.title}')),
-    );
-  }
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => MangaDetailPage(manga: manga),
+    ),
+  );
+}
 
   // Keep all your existing local manga methods
   Future<void> _onAddManga() async {
