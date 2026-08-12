@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/theme.dart';
-import '../auth/login_page.dart';
 
 class AdminHomePage extends StatefulWidget {
   const AdminHomePage({super.key});

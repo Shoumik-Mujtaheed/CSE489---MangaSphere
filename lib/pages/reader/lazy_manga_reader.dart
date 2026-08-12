@@ -20,7 +20,7 @@ class LazyMangaReader extends StatefulWidget {
 
 class _LazyMangaReaderState extends State<LazyMangaReader> {
   List<String> _allPageUrls = [];
-  List<String> _displayedPages = [];
+  final List<String> _displayedPages = [];
   int _currentIndex = 0;
   bool _isLoading = true;
   bool _loadingMore = false;
@@ -231,7 +231,7 @@ class _MangaPageWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return SizedBox(
       width: double.infinity,
       child: InteractiveViewer(
         minScale: 0.8,

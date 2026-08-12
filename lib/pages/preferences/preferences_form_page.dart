@@ -459,7 +459,7 @@ class _PreferencesFormPageState extends State<PreferencesFormPage> {
           style: const TextStyle(color: Colors.white54),
         ),
         value: _ongoing,
-        activeColor: AppTheme.iconColor,
+        activeThumbColor: AppTheme.iconColor,
         onChanged: (value) {
           setState(() => _ongoing = value);
         },

@@ -264,6 +264,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           ? FloatingActionButton(
               onPressed: _loadingLocal ? null : _onAddManga,
               backgroundColor: const Color.fromARGB(255, 165, 0, 0),
+              tooltip: 'Import Manga',
               child: _loadingLocal 
                   ? const SizedBox(
                       width: 20,
@@ -274,7 +275,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       ),
                     )
                   : const Icon(Icons.add, color: Colors.white),
-              tooltip: 'Import Manga',
             )
           : null,
     );
